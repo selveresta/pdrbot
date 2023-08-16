@@ -2,14 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { Context } from 'telegraf';
 import { BotButtons } from './bot.buttons';
 import { MongooseMediatorService } from '../mongoose-mediator/mongoose-mediator.service';
+import { generateQuestionTopicFromJSON } from '../../utils/generateQuestionTopics';
 
 @Injectable()
 export class BotService {
 	private URL = '';
 
-	constructor(private readonly botButtons: BotButtons, private readonly mongooseMediator: MongooseMediatorService) {
-		
-	}
+	constructor(private readonly botButtons: BotButtons, private readonly mongooseMediator: MongooseMediatorService) {}
 
 	public async startCommand(ctx: Context) {
 		const { id, username } = ctx.message.from;

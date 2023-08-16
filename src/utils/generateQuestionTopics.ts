@@ -1,4 +1,9 @@
 import * as fs from 'fs';
+
+function removeExtension(filename) {
+	return filename.substring(0, filename.lastIndexOf('.')) || filename;
+}
+
 export const generateQuestionTopicFromJSON = (mediator) => {
 	let dir = fs.readdirSync('./themes');
 	const regEx = /[-+]?[0-9]*\.?[0-9]/;
@@ -36,7 +41,8 @@ export const generateQuestionTopicFromJSON = (mediator) => {
 
 		const saveTopic = async (number, questionsIds) => {
 			const newtTopic = await mediator.createTopic({
-				name: `topic${number}`,
+				// name: `topic${number}`,
+				name: removeExtension(fileName).split('_').join(' '),
 				questions: questionsIds,
 			});
 		};
