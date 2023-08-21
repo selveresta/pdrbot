@@ -5,6 +5,7 @@ import { User, UserSchema } from '../../schema/user.schema';
 import { Question, QuestionSchema } from '../../schema/question.schema';
 import { Topic, TopicSchema } from '../../schema/topic.schema';
 import { TopicProgress, TopicProgressSchema } from '../../schema/topicProgress.schems';
+import { LoggerModule } from '../../shared/logger/logger.module';
 
 const schemas = [
 	{ name: User.name, schema: UserSchema },
@@ -14,7 +15,7 @@ const schemas = [
 ];
 
 @Module({
-	imports: [MongooseModule.forFeature(schemas)],
+	imports: [MongooseModule.forFeature(schemas), LoggerModule],
 	providers: [MongooseMediatorService],
 	exports: [MongooseMediatorService],
 })

@@ -4,9 +4,13 @@ function removeExtension(filename) {
 	return filename.substring(0, filename.lastIndexOf('.')) || filename;
 }
 
+export const getRegEx = () => {
+	return /[-+]?[0-9]*\.?[0-9]/;
+};
+
 export const generateQuestionTopicFromJSON = (mediator) => {
 	let dir = fs.readdirSync('./themes');
-	const regEx = /[-+]?[0-9]*\.?[0-9]/;
+	const regEx = getRegEx();
 	dir.forEach(async (fileName, index) => {
 		const topicNumber = fileName.match(regEx);
 

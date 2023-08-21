@@ -7,6 +7,7 @@ import { TelegrafModule } from 'nestjs-telegraf';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import * as path from 'path';
+import { LoggerModule } from './shared/logger/logger.module';
 
 const sessions = new LocalSession({ database: 'session_db.json' });
 
@@ -26,6 +27,7 @@ const sessions = new LocalSession({ database: 'session_db.json' });
 			token: process.env.BOT_TOKEN,
 		}),
 		BotModule,
+		LoggerModule,
 	],
 	controllers: [],
 	providers: [],

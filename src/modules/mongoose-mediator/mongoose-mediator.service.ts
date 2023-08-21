@@ -8,7 +8,8 @@ import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { User } from '../../schema/user.schema';
 import { Question } from '../../schema/question.schema';
 import { Topic } from '../../schema/topic.schema';
-import { TopicProgress } from '../../schema/topicProgress.schems';
+import { IQuestionProgress, ITopicsQuestionProgress, TopicProgress } from '../../schema/topicProgress.schems';
+import { LoggerService } from '../../shared/logger/logger.service';
 
 export interface IMediatorDB {
 	createUser(dto: CreateUserDto);
@@ -19,12 +20,22 @@ export interface IMediatorDB {
 	findQuestion(id: string);
 	findTopic(id: string);
 
+	findAllUser();
+	findAllQuestion();
+	findAllTopic();
+
+	findUserProgress(userId: number);
+	findUserProgressTopic(userId: number, topicId: string);
+	findUserProgressQuestion(userId: number, topicId: string, questionId);
+
+	checkCorrectAnswer(questionId: string, answerIndex: number);
+
 	updateUserProgress(dto: UpdateUserProgress);
-	getuserStats(userId: number);
+	getUserStats(userId: number);
 	getRandomQuestion();
 	getTopicQuestion(topicId: ObjectId);
 	getMisstakesQuestionOfTopic(topicId: ObjectId);
-	generateNewProgress();
+	generateNewProgress(dto: CreateUserDto);
 }
 
 @Injectable()
@@ -35,16 +46,22 @@ export class MongooseMediatorService implements IMediatorDB {
 		@InjectModel(Topic.name) private topicModel: Model<Topic>,
 		@InjectModel(TopicProgress.name) private topicProgressModel: Model<TopicProgress>,
 		@InjectConnection() private connection: Connection,
+		private readonly logger: LoggerService,
 	) {}
 
-	createUser(dto: CreateUserDto) {
-		const user = new this.userModel(dto);
+	async createUser(dto: CreateUserDto) {
+		const candidate = await this.userModel.findOne({ id: dto.id });
+		if (candidate) {
+			return;
+		}
 
-		const userTopicProgress = new this.topicProgressModel({
-			userId: dto.id,
-		});
+		const user = await new this.userModel(dto).save();
 
-		return user.save();
+		if (user) {
+			this.logger.log(`User ${user.username} - ${user.id} created`);
+			this.generateNewProgress(user);
+		}
+		return user;
 	}
 	async createQuestion(dto: CreateQuestionDto) {
 		const question = new this.questionModel(dto);
@@ -53,6 +70,10 @@ export class MongooseMediatorService implements IMediatorDB {
 	async createTopic(dto: CreateTopicDto) {
 		const topic = new this.topicModel(dto);
 		return await topic.save();
+	}
+
+	async findUserProgress(userId: number) {
+		return await this.topicProgressModel.findOne({ userId: userId });
 	}
 
 	async findUser(id: string) {
@@ -65,21 +86,41 @@ export class MongooseMediatorService implements IMediatorDB {
 		return await this.topicModel.findById(id).exec();
 	}
 
-	updateUserProgress(dto: UpdateUserProgress) {
-		throw new Error('Method not implemented.');
+	async findAllQuestion() {
+		return await this.questionModel.find().exec();
 	}
-	getuserStats(userId: number) {
-		throw new Error('Method not implemented.');
-	}
-	getRandomQuestion() {
-		throw new Error('Method not implemented.');
-	}
-	getTopicQuestion(topicId: Schema.Types.ObjectId) {
-		throw new Error('Method not implemented.');
-	}
-	getMisstakesQuestionOfTopic(topicId: Schema.Types.ObjectId) {
-		throw new Error('Method not implemented.');
+	async findAllTopic() {
+		return await this.topicModel.find().exec();
 	}
 
-	generateNewProgress() {}
+	async generateNewProgress(user: User) {
+		const topics = await this.topicModel.find().exec();
+		const TQProgress: ITopicsQuestionProgress[] = [];
+
+		topics.forEach((topic) => {
+			const QProgress: IQuestionProgress[] = [];
+
+			topic.questions.forEach((questionId) => {
+				const questionProgress: IQuestionProgress = {
+					isCorrect: false,
+					questionId: questionId,
+				};
+				QProgress.push(questionProgress);
+			});
+
+			TQProgress.push({
+				topicID: topic.id,
+				lastQuestionIndex: 0,
+				questionProgress: QProgress,
+			});
+		});
+		const userTopicProgress = await new this.topicProgressModel({
+			userId: user.id,
+			topics: TQProgress,
+		}).save();
+
+		if (userTopicProgress) {
+			this.logger.log(`Progress for ${user.username} - ${user.id} created`);
+		}
+	}
 }

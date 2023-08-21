@@ -3,24 +3,27 @@ import { HydratedDocument, ObjectId } from 'mongoose';
 import { IQuestion } from './question.schema';
 
 export interface IQuestionProgress {
-	questionId: ObjectId;
+	questionId: string;
 	isCorrect: boolean;
 }
 
 export interface ITopicsQuestionProgress {
-	topicID: ObjectId;
+	topicID: string;
+	lastQuestionIndex: number;
 	questionProgress: IQuestionProgress[];
 }
 
 export interface ITopicProgress {
 	userId: number;
-	topics: ITopicProgress[];
+	topics: ITopicsQuestionProgress[];
 }
 
 @Schema()
 export class TopicProgress implements ITopicProgress {
+	@Prop()
 	userId: number;
-	topics: ITopicProgress[];
+	@Prop()
+	topics: ITopicsQuestionProgress[];
 }
 
 export type TopicProgressDocument = HydratedDocument<TopicProgress>;
