@@ -8,7 +8,9 @@ import { SceneContext } from 'telegraf/typings/scenes';
 import { Update as CallBackUpdate, Message } from 'telegraf/typings/core/types/typegram';
 import { Question } from '../../schema/question.schema';
 import { Types, Document } from 'mongoose';
-import { IQuestionProgress, ITopicsQuestionProgress } from '../../schema/topicProgress.schems';
+import { ITopicsQuestionProgress } from '../../schema/topicProgress.schems';
+import { WrapperService } from '../wrapper/wrapper.service';
+import { UpdateUserProgressDto } from '../../dto/update-user-progress.dto';
 
 @Injectable()
 export class BotService {
@@ -18,18 +20,16 @@ export class BotService {
 		private readonly botButtons: BotButtons,
 		private readonly mongooseMediator: MongooseMediatorService,
 		private readonly logger: LoggerService,
+		private readonly wrapperService: WrapperService,
 	) {}
 
 	public async startCommand(ctx: Context) {
 		const { id, username } = ctx.message.from;
 		const user = await this.mongooseMediator.createUser({ id, username });
 		if (user) {
-			await ctx.reply(
-				'Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industrys standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.',
-				this.botButtons.menuButtons(),
-			);
+			await ctx.reply('Вітаю в безкоштовному боті з офіційними тестами ПДР.', this.botButtons.menuButtons());
 		} else {
-			await ctx.reply('User has been already registered', this.botButtons.menuButtons());
+			await ctx.reply(`Користувач ${username} вже зареєстровано`, this.botButtons.menuButtons());
 		}
 	}
 
@@ -49,96 +49,100 @@ export class BotService {
 
 	public async getTopics(ctx: Context) {
 		const topics = await this.mongooseMediator.findAllTopic();
-		const names = topics.map((t) => t.name);
-		ctx.reply('Теми', this.botButtons.getTopicbuttons(names));
+		await ctx.reply('Теми', this.botButtons.getTopicbuttons(topics));
 	}
 
-	public async getTopicByNumber(number: string) {
-		const topics = await this.mongooseMediator.findAllTopic();
-		let topic = topics[0];
-		topics.forEach((t) => {
-			const regEx = getRegEx();
-			const res1 = t.name.match(regEx)[0];
-			const res2 = number.match(regEx)[0];
-			// console.log(res, ' - ', number, ' = ', res === number);
-			if (res1 === res2) {
-				topic = t;
-			}
-		});
-		return topic;
+	public async startTopic(ctx: Context & { update: CallBackUpdate.CallbackQueryUpdate }, topicData: string) {
+		const topicID = this.parseCallBackData(topicData, this.wrapperService.getTopicWrapper());
+		const question = await this.getQuestion(ctx, topicID[1]);
 	}
 
-	public async getQuestionOfTopic(
+	public async checkCorrectAnswer(ctx: Context & { update: CallBackUpdate.CallbackQueryUpdate }, data: string) {
+		const questionId = this.parseCallBackData(data, this.wrapperService.getQuestionWrapper())[1];
+		const topicId = this.parseCallBackData(data, this.wrapperService.getTopicWrapper())[1];
+		const answerIndex = this.parseCallBackData(data, this.wrapperService.getAnswerWrapper())[1];
+		console.log(answerIndex);
+		const question = await this.mongooseMediator.findQuestion(questionId);
+
+		const updateUserDto: UpdateUserProgressDto = {
+			userId: Number(ctx.update.callback_query.id),
+			topicId: topicId,
+			correct: question.correct,
+			answerIndex: Number(answerIndex),
+		};
+		const result = await this.mongooseMediator.updateUserProgress(updateUserDto, question);
+		if (result) {
+			await ctx.reply(`Вірно ✅`);
+		} else {
+			await ctx.reply(`Невірно ❌, правильна відповідь - ${question.correct}`);
+		}
+		await ctx.editMessageReplyMarkup(this.botButtons.emptyMarkup(topicId, question.id));
+		await ctx.answerCbQuery();
+	}
+
+	public async getNextQuestion(
 		ctx: Context & { update: CallBackUpdate.CallbackQueryUpdate },
-		topicNumber: string,
+		data: string,
+		WIU?: boolean,
 	) {
-		const topic = await this.getTopicByNumber(topicNumber);
+		const topicID = this.parseCallBackData(data, this.wrapperService.getTopicWrapper());
+		if (WIU) {
+			await this.updateLastIndexOfTopic(ctx.update.callback_query.from.id, topicID[1], true);
+		}
+		await this.getQuestion(ctx, topicID[1]);
+	}
 
-		const topicProgress = await this.mongooseMediator.getUserProgress(ctx.update.callback_query.from.id);
-		const currectTopicProgress = [];
-		topicProgress.topics.forEach((t) => {
-			if (t.topicID === topic.id) {
-				currectTopicProgress.push(t);
-			}
-		});
-		const questionId = topic.questions[currectTopicProgress[0].lastQuestionIndex];
-		const currentQuestion = await this.mongooseMediator.findQuestion(questionId);
+	public async getPrevQuestion(
+		ctx: Context & { update: CallBackUpdate.CallbackQueryUpdate },
+		data: string,
+		WIU?: boolean,
+	) {
+		const topicID = this.parseCallBackData(data, this.wrapperService.getTopicWrapper());
+		if (WIU) {
+			await this.updateLastIndexOfTopic(ctx.update.callback_query.from.id, topicID[1], false);
+		}
+		await this.getQuestion(ctx, topicID[1]);
+	}
 
-		const answers = currentQuestion.answers.map((answer, index) => {
+	public async updateLastIndexOfTopic(userId: number, topicId: string, way: boolean) {
+		await this.mongooseMediator.updateLastIndexTopic(userId, topicId, way);
+	}
+
+	public async getQuestion(ctx: Context & { update: CallBackUpdate.CallbackQueryUpdate }, topicId: string) {
+		const topic = await this.mongooseMediator.findTopic(topicId);
+		const topicProgress = await this.mongooseMediator.findUserProgressTopic(
+			ctx.update.callback_query.from.id,
+			topic.id,
+		);
+
+		const questionProgress = await this.mongooseMediator.findQuestionsProgress(topicProgress.questionProgressId);
+		const { questionId } = questionProgress.questionsProgress[topicProgress.lastQuestionIndex];
+		const question = await this.mongooseMediator.findQuestion(questionId);
+
+		const answers = question.answers.map((answer, index) => {
 			return `${this.getEmojiNumberFromUnicode(index + 1)}${answer}\n`;
 		});
-		const caption = `Тема: ${topic.name}\n\n Питання: ${currentQuestion.question}\n\n${answers.join('\n')}`;
 
-		if (currentQuestion.img !== 'nophoto') {
-			ctx.replyWithPhoto(
-				{ url: `${this.URL}${currentQuestion.img}` },
-				{
-					caption: caption,
-					reply_markup: { inline_keyboard: this.botButtons.generateQuestionButtons(currentQuestion) },
-				},
-			);
-		} else {
-			ctx.reply(caption, {
-				reply_markup: { inline_keyboard: this.botButtons.generateQuestionButtons(currentQuestion) },
-			});
+		const caption = `${topic.name}\n\n${question.question}\n\n${answers.join('\n')}`;
+		await ctx.answerCbQuery();
+
+		try {
+			if (question.img !== 'nophoto') {
+				await ctx.replyWithPhoto(
+					{ url: `${this.URL}${question.img}` },
+					{
+						caption: caption,
+						reply_markup: { inline_keyboard: this.botButtons.generateQuestionButtons(topic.id, question) },
+					},
+				);
+			} else {
+				await ctx.reply(caption, {
+					reply_markup: { inline_keyboard: this.botButtons.generateQuestionButtons(topic.id, question) },
+				});
+			}
+		} catch (error) {
+			this.logger.error(error.message);
 		}
-	}
-
-	public async checkCorrectAnswer(
-		ctx: Context & { update: CallBackUpdate.CallbackQueryUpdate },
-		questionId: string,
-		answerIndex: string,
-	) {
-		const question = await this.getQuestion(questionId);
-		const questionProgress = await this.getQuestionProgress(ctx.update.callback_query.from.id, questionId);
-
-		const resAnswer = question.answers[Number(answerIndex) - 1];
-		if (question.correct.search(resAnswer)) {
-			questionProgress.isCorrect = true;
-			ctx.reply(`Uncorrect, correct answer is ${question.correct}`);
-		} else {
-			questionProgress.isCorrect = false;
-			ctx.reply(`Nice, is correct answer`);
-		}
-	}
-
-	public async getQuestionProgress(userId: number, questionId: string) {
-		const topicProgress = await this.mongooseMediator.getUserProgress(userId);
-		const currectQuestionProgress: IQuestionProgress[] = [];
-
-		topicProgress.topics.forEach((t) => {
-			t.questionProgress.forEach((q) => {
-				if (q.questionId === questionId) {
-					currectQuestionProgress.push(q);
-				}
-			});
-		});
-
-		return currectQuestionProgress[0];
-	}
-
-	public async getQuestion(id: string) {
-		return await this.mongooseMediator.findQuestion(id);
 	}
 
 	public async getRandomQuestion(ctx: Context) {
@@ -157,5 +161,9 @@ export class BotService {
 		return (
 			String.fromCharCode(Number(`0x003${number}`)) + String.fromCodePoint(0xfe0f) + String.fromCodePoint(0x20e3)
 		);
+	}
+
+	public parseCallBackData(data: string, separator: string) {
+		return data.split(separator);
 	}
 }

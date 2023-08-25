@@ -2,7 +2,8 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import { IQuestion } from './question.schema';
 export interface ITopic {
-	questions: string[]
+	name: string;
+	questions: string[];
 }
 
 @Schema()

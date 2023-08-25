@@ -1,12 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { Markup } from 'telegraf';
-import { IQuestion, Question } from '../../schema/question.schema';
-import { InlineKeyboardButton } from 'telegraf/typings/core/types/typegram';
+import { IQuestion, Question, QuestionDocument } from '../../schema/question.schema';
+import { InlineKeyboardButton, InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 import { Document } from 'mongoose';
 import { Types } from 'mongoose';
+import { Topic, TopicDocument } from '../../schema/topic.schema';
+import { WrapperService } from '../wrapper/wrapper.service';
+import { inlineKeyboard } from 'telegraf/typings/markup';
+
 @Injectable()
 export class BotButtons {
-	constructor() {}
+	constructor(private readonly wrapperServise: WrapperService) {}
 
 	public menuButtons() {
 		const markUp = [
@@ -23,15 +27,17 @@ export class BotButtons {
 		return buttons;
 	}
 
-	public getTopicbuttons(topics: string[]) {
+	public getTopicbuttons(topics: TopicDocument[]) {
 		const regEx = /[-+]?[0-9]*\.?[0-9]/;
 		const markUp = [];
+
 		topics.sort((a, b) => {
-			const Anumber = a.match(regEx);
-			const Bnumber = b.match(regEx);
+			const Anumber = a.name.match(regEx);
+			const Bnumber = b.name.match(regEx);
 			return Number(Anumber[0]) - Number(Bnumber[0]);
 		});
-		topics.forEach((t) => markUp.push(Markup.button.callback(t, String('topic' + t.match(regEx)[0]))));
+
+		topics.forEach((t) => markUp.push(Markup.button.callback(t.name, this.wrapperServise.wrapTopicCallBack(t))));
 
 		const buttons = Markup.inlineKeyboard(markUp, {
 			columns: 1,
@@ -40,23 +46,35 @@ export class BotButtons {
 		return buttons;
 	}
 
-	public generateQuestionButtons(
-		questions: Document<unknown, {}, Question> &
-			Question & {
-				_id: Types.ObjectId;
-			},
-	) {
+	public generateQuestionButtons(topicID: string, question: QuestionDocument) {
 		const markUp: InlineKeyboardButton[][] = [];
 
-		for (let i = 0; i < questions.answers.length; i++) {
-			markUp.push([{ text: String(i + 1), callback_data: `${questions.id}answer${i + 1}` }]);
+		for (let i = 0; i < question.answers.length; i++) {
+			markUp.push([
+				{
+					text: String(i + 1),
+					callback_data: this.wrapperServise.wrapQuestionCallBack(topicID, question.id, i),
+				},
+			]);
 		}
 
 		markUp.push([
-			{ text: 'Попереднє', callback_data: `prev` },
-			{ text: 'Наступне', callback_data: `next` },
+			{ text: 'Попереднє', callback_data: this.wrapperServise.wrapPrevWIUQuestion(topicID) },
+			{ text: 'Наступне', callback_data: this.wrapperServise.wrapNexWIUQuestion(topicID) },
 		]);
 
+		return markUp;
+	}
+
+	public emptyMarkup(topicID: string, questionId: string) {
+		const markUp: InlineKeyboardMarkup = {
+			inline_keyboard: [
+				[
+					{ text: 'Попереднє', callback_data: this.wrapperServise.wrapPrevQuestion(topicID) },
+					{ text: 'Наступне', callback_data: this.wrapperServise.wrapNexQuestion(topicID) },
+				],
+			],
+		};
 		return markUp;
 	}
 }

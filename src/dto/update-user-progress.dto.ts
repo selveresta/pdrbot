@@ -1,8 +1,8 @@
 import { ObjectId } from 'mongoose';
 
-export class UpdateUserProgress {
+export class UpdateUserProgressDto {
 	readonly userId: number;
 	readonly topicId: string;
-	readonly questionId: string;
-	readonly answer: string;
+	readonly correct: string;
+	readonly answerIndex: number;
 }
